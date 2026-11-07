@@ -28,7 +28,7 @@ table{border-collapse:collapse;width:100%;min-width:950px;background:white}th,td
 <main id="deliveryTab" class="tabPage hidden"><section class="panel"><div class="toolbar">
 <button class="primary" onclick="newRecord()">+ ಹೊಸ Delivery Place</button><button class="secondary" onclick="loadAll()">↻ Refresh</button>
 <div class="search"><input id="searchBox" placeholder="Search PIN Code / Office / Village / Beat…" oninput="searchChanged()"></div>
-</div><div id="status" class="status">Public test mode: Google Login ಇಲ್ಲದೆ Add / Edit ಮಾಡಬಹುದು.</div></section>
+</div><div id="status" class="status">Loading Delivery Village records…</div></section>
 <section id="formPanel" class="panel hidden">
 <h2 id="formTitle" style="font-size:18px;margin-top:0">ಹೊಸ Delivery Place</h2>
 <form id="recordForm" onsubmit="submitForm(event)">
@@ -941,9 +941,9 @@ function populateOffices(selectedKey=''){
 function officeChanged(){const raw=document.getElementById('officeSelect').value,o=raw===''?null:offices[Number(raw)];document.getElementById('pincode').value=o?o.pincode:'';document.getElementById('officeName').value=o?o.officeName:'';document.getElementById('officeType').value=o?o.officeType:'';}
 async function loadDeliveryTab(){
  if(!sb){status('Supabase connection is not ready.','err');return;}
- // Temporary test mode: no Google Login required for viewing or editing.
- currentUser=null;
+ const {data:{session}}=await sb.auth.getSession(); currentUser=session?.user||null;
  currentRole='public';
+ if(currentUser){const {data:roleData}=await sb.from('user_roles').select('role').eq('user_id',currentUser.id).maybeSingle();currentRole=roleData?.role||'user';}
  await loadAll();
 }
 async function loadAll(){
@@ -971,8 +971,7 @@ async function loadAll(){
      locatedVillage:r.located_village,deliveryPlaces:r.delivery_places,
      deliveryBeat:r.delivery_beat,remarks:r.remarks}));
    renderRecords();
-   status('TD Offices: '+offices.length+' | Delivery records: '+records.length+
-     ' | Public test mode: Add/Edit available','ok');
+   status('TD Offices: '+offices.length+' | Delivery records: '+records.length+' | Public Add/Edit ಲಭ್ಯವಿದೆ.','ok');
  }catch(e){status('ಡೇಟಾ ಪಡೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: '+e.message,'err');}
 }
 function searchChanged(){renderRecords();const open=!document.getElementById('formPanel').classList.contains('hidden');if(open){const cur=document.getElementById('officeSelect').value;const o=cur===''?null:offices[Number(cur)];populateOffices(o?o.officeKey:'');}}
@@ -980,7 +979,7 @@ function renderRecords(){const q=(document.getElementById('searchBox').value||''
 function newRecord(){
  editingId=null;document.getElementById('recordForm').reset();populateOffices();officeChanged();
  document.getElementById('formTitle').textContent='ಹೊಸ Delivery Place ಸೇರಿಸಿ';document.getElementById('saveBtn').textContent='Save';
- formStatus('Login ಇಲ್ಲದೆ ಹೊಸ Delivery Place ಸೇರಿಸಬಹುದು.','');document.getElementById('formPanel').classList.remove('hidden');window.scrollTo({top:0,behavior:'smooth'});
+ formStatus('ಹೊಸ Delivery Place ಸೇರಿಸಿ. ಎಲ್ಲ Usersಗೂ Add ಸೌಲಭ್ಯ ಇದೆ.','');document.getElementById('formPanel').classList.remove('hidden');window.scrollTo({top:0,behavior:'smooth'});
 }
 function editRecord(id){
  const r=records.find(x=>x.id===id);if(!r)return;editingId=r.id;
@@ -995,8 +994,6 @@ function closeForm(){document.getElementById('formPanel').classList.add('hidden'
 async function submitForm(e){
   e.preventDefault();
   const wasEditing = Boolean(editingId);
-
-  // Temporary test mode: editing does not require Google Login.
 
   const selected = document.getElementById('officeSelect').value;
   const o = selected === '' ? null : offices[Number(selected)];
@@ -1070,6 +1067,15 @@ async function submitForm(e){
 async function removeRecord(id){if(currentRole!=='admin'){status('Delete ಮಾಡಲು Admin ಅನುಮತಿ ಅಗತ್ಯ.','err');return;}const r=records.find(x=>x.id===id);if(!r||!confirm('ಈ Delivery Place ಅಳಿಸಬೇಕೇ?\n'+r.deliveryPlaces+' — '+r.officeName))return;const {error}=await sb.from('delivery_places').delete().eq('id',id);if(error){status('ಅಳಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ: '+error.message,'err');return;}await loadAll();status('ದಾಖಲೆ ಅಳಿಸಲಾಗಿದೆ.','ok');}
 if(initSupabase()){
  document.getElementById('ntdStatus').textContent='PIN Code ಅಥವಾ Office Name ನಮೂದಿಸಿ ಹುಡುಕಿ.';
- // Google OAuth is intentionally not invoked in this temporary test build.
+ sb.auth.onAuthStateChange((event,session)=>{
+   currentUser=session?.user||null;currentRole=currentUser?'user':'public';
+   if(!document.getElementById('deliveryTab').classList.contains('hidden'))setTimeout(()=>loadDeliveryTab(),0);
+ });
+ window.addEventListener('load',async()=>{
+   const {data:{session}}=await sb.auth.getSession();currentUser=session?.user||null;
+   if(currentUser){
+  
+   }
+ });
 }
 </script></body></html>
