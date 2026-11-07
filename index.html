@@ -27,8 +27,22 @@ table{border-collapse:collapse;width:100%;min-width:950px;background:white}th,td
 </main>
 <main id="deliveryTab" class="tabPage hidden"><section class="panel"><div class="toolbar">
 <button class="primary" onclick="newRecord()">+ ಹೊಸ Delivery Place</button><button class="secondary" onclick="loadAll()">↻ Refresh</button>
+<button id="adminLoginBtn" class="secondary" type="button" onclick="toggleAdminLogin()">Admin Login</button>
+<button id="adminLogoutBtn" class="secondary hidden" type="button" onclick="adminLogout()">Admin Logout</button>
 <div class="search"><input id="searchBox" placeholder="Search PIN Code / Office / Village / Beat…" oninput="searchChanged()"></div>
-</div><div id="status" class="status">Loading Delivery Village records…</div></section>
+</div>
+<div id="adminLoginPanel" class="panel hidden" style="margin-top:12px;margin-bottom:0">
+  <h3 style="margin:0 0 10px;font-size:16px">Admin Login – Delete ಅನುಮತಿಗಾಗಿ ಮಾತ್ರ</h3>
+  <form onsubmit="adminLogin(event)">
+    <div class="formgrid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <div><label for="adminEmail">Admin Email</label><input id="adminEmail" type="email" autocomplete="username" value="appggkaniyuru@gmail.com" required></div>
+      <div><label for="adminPassword">Password</label><input id="adminPassword" type="password" autocomplete="current-password" required></div>
+    </div>
+    <div class="toolbar" style="margin-top:10px"><button class="primary" id="adminLoginSubmit" type="submit">Login</button><button class="secondary" type="button" onclick="toggleAdminLogin(false)">Cancel</button></div>
+    <div id="adminLoginStatus" class="status" aria-live="polite"></div>
+  </form>
+</div>
+<div id="status" class="status">Loading Delivery Village records…</div></section>
 <section id="formPanel" class="panel hidden">
 <h2 id="formTitle" style="font-size:18px;margin-top:0">ಹೊಸ Delivery Place</h2>
 <form id="recordForm" onsubmit="submitForm(event)">
@@ -939,11 +953,70 @@ function populateOffices(selectedKey=''){
  s.innerHTML='<option value="">'+(matching.length?'Office ಆಯ್ಕೆಮಾಡಿ… ('+matching.length+' ಹೊಂದಾಣಿಕೆ)':'ಈ Pincode/ಹುಡುಕಾಟಕ್ಕೆ Office ಸಿಗಲಿಲ್ಲ')+'</option>'+matching.map(x=>`<option value="${x.i}" ${x.o.officeKey===selectedKey?'selected':''}>${esc(x.o.pincode)} — ${esc(x.o.officeName)} (${esc(x.o.officeType)})</option>`).join('');
 }
 function officeChanged(){const raw=document.getElementById('officeSelect').value,o=raw===''?null:offices[Number(raw)];document.getElementById('pincode').value=o?o.pincode:'';document.getElementById('officeName').value=o?o.officeName:'';document.getElementById('officeType').value=o?o.officeType:'';}
+async function refreshCurrentRole(){
+ const {data:{session}}=await sb.auth.getSession();
+ currentUser=session?.user||null;
+ currentRole='public';
+ if(currentUser){
+   const {data:roleData,error}=await sb.from('user_roles').select('role').eq('user_id',currentUser.id).maybeSingle();
+   if(!error && roleData?.role==='admin' && String(currentUser.email||'').toLowerCase()==='appggkaniyuru@gmail.com'){
+     currentRole='admin';
+   }else{
+     currentRole='user';
+   }
+ }
+ document.getElementById('adminLoginBtn').classList.toggle('hidden',currentRole==='admin');
+ document.getElementById('adminLogoutBtn').classList.toggle('hidden',currentRole!=='admin');
+ if(currentRole!=='admin') document.getElementById('adminLoginPanel').classList.add('hidden');
+}
+function toggleAdminLogin(show){
+ const panel=document.getElementById('adminLoginPanel');
+ if(show===undefined) show=panel.classList.contains('hidden');
+ panel.classList.toggle('hidden',!show);
+ if(show) document.getElementById('adminEmail').focus();
+}
+function adminLoginStatus(message,type){
+ const el=document.getElementById('adminLoginStatus');
+ el.textContent=message||'';
+ el.className='status '+(type||'');
+}
+async function adminLogin(e){
+ e.preventDefault();
+ const email=document.getElementById('adminEmail').value.trim().toLowerCase();
+ const password=document.getElementById('adminPassword').value;
+ const btn=document.getElementById('adminLoginSubmit');
+ if(email!=='appggkaniyuru@gmail.com'){
+   adminLoginStatus('ಈ App‌ಗೆ ಅನುಮತಿಸಲಾದ Admin Email ಬಳಸಿ.','err');return;
+ }
+ btn.disabled=true;adminLoginStatus('Login ಆಗುತ್ತಿದೆ…');
+ try{
+   const {data,error}=await sb.auth.signInWithPassword({email,password});
+   if(error) throw error;
+   currentUser=data.user||null;
+   await refreshCurrentRole();
+   if(currentRole!=='admin'){
+     await sb.auth.signOut();
+     await refreshCurrentRole();
+     throw new Error('ಈ ಖಾತೆಗೆ Admin Role ಇಲ್ಲ. Supabase user_roles ಪರಿಶೀಲಿಸಿ.');
+   }
+   document.getElementById('adminPassword').value='';
+   toggleAdminLogin(false);
+   await loadAll();
+   status('Admin Login ಯಶಸ್ವಿಯಾಗಿದೆ. Delete ಸೌಲಭ್ಯ ಲಭ್ಯವಿದೆ.','ok');
+ }catch(err){
+   adminLoginStatus('Login ವಿಫಲವಾಗಿದೆ: '+(err.message||'ದಯವಿಟ್ಟು ವಿವರ ಪರಿಶೀಲಿಸಿ.'),'err');
+ }finally{btn.disabled=false;}
+}
+async function adminLogout(){
+ const {error}=await sb.auth.signOut();
+ if(error){status('Logout ಆಗಲಿಲ್ಲ: '+error.message,'err');return;}
+ await refreshCurrentRole();
+ renderRecords();
+ status('Admin Logout ಆಗಿದೆ. Public Add/Edit ಮುಂದುವರಿಯುತ್ತದೆ.','ok');
+}
 async function loadDeliveryTab(){
  if(!sb){status('Supabase connection is not ready.','err');return;}
- const {data:{session}}=await sb.auth.getSession(); currentUser=session?.user||null;
- currentRole='public';
- if(currentUser){const {data:roleData}=await sb.from('user_roles').select('role').eq('user_id',currentUser.id).maybeSingle();currentRole=roleData?.role||'user';}
+ await refreshCurrentRole();
  await loadAll();
 }
 async function loadAll(){
@@ -1068,14 +1141,17 @@ async function removeRecord(id){if(currentRole!=='admin'){status('Delete ಮಾ�
 if(initSupabase()){
  document.getElementById('ntdStatus').textContent='PIN Code ಅಥವಾ Office Name ನಮೂದಿಸಿ ಹುಡುಕಿ.';
  sb.auth.onAuthStateChange((event,session)=>{
-   currentUser=session?.user||null;currentRole=currentUser?'user':'public';
-   if(!document.getElementById('deliveryTab').classList.contains('hidden'))setTimeout(()=>loadDeliveryTab(),0);
+   currentUser=session?.user||null;
+   currentRole=currentUser?'user':'public';
+   setTimeout(async()=>{
+     await refreshCurrentRole();
+     if(!document.getElementById('deliveryTab').classList.contains('hidden')){
+       renderRecords();
+     }
+   },0);
  });
  window.addEventListener('load',async()=>{
-   const {data:{session}}=await sb.auth.getSession();currentUser=session?.user||null;
-   if(currentUser){
-  
-   }
+   await refreshCurrentRole();
  });
 }
 </script></body></html>
