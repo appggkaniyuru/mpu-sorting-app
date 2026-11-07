@@ -76,7 +76,8 @@ class MainActivity : Activity() {
     errorText.visibility = View.GONE
     webView.visibility = View.VISIBLE
     progress.visibility = View.VISIBLE
-    webView.loadUrl("https://appggkaniyuru.github.io/mails-sorting-rms/")
+
+    webView.loadUrl("https://appggkaniyuru.github.io/mpu-sorting-app/")
 }
 
 @Deprecated("Deprecated in Java")
